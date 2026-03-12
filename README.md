@@ -1,8 +1,7 @@
 # ClawCoco
-Claw Code Copliot, work with Openclaw via github, with minimal trust
+Claw Code Copilot, work with Openclaw via github, with minimal trust
 
 ## What is this?
-
 ClawCoco provides the glue between your GitHub repository and Openclaw agent:
 
 - **Webhook Service** - Receives GitHub events and notifies the agent
@@ -13,9 +12,26 @@ In worst cases, your claw could be fully compromised by an attacker and allow RC
 in your claw's execution environment. Thus, I would like to treat the agent as a kind,
 enthusiastic contributor—but never fully trust him.
 
-Create a dedicated github account for your claw and let it work with its own fork.
+Create a dedicated GitHub account for your claw and let it work with its own fork.
 
-All changes to your repo go through PR and your review. 
+All changes to your repo go through PR and your review.
+
+## Threat Model
+### Trusted
+- The **authorized GitHub user** - your github accout and whoever you trust
+### Untrusted
+- The **agent account** - may be compromised or behave unexpectedly
+### Trust Boundary Enforcement
+- GitHub permissions: agent account has **NO write access** to origin repo
+- Agent must work on its own fork
+- All changes go through **fork → PR → human review**
+### Webhook's Role
+- Verify request comes from GitHub (signature, IP)
+- Filter messages: only from authorized user AND with explicit `@your-agent-name`
+- Spawn agent to handle the request
+
+The webhook does not enforce the trust boundary — GitHub permissions do.
+
 
 ## Why not GitHub App?
 Currently, the open source LLM (GLM-5) can not understand the permission system of

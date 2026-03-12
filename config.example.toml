@@ -1,0 +1,11 @@
+[webhook]
+secret = "test-secret-123"
+port = 8080
+debug = true
+
+[github]
+authorized_user = "pkuGenuine"
+assistant_account = "genuineClaw"
+
+[openclaw]
+agent_id = "coder"
