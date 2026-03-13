@@ -93,15 +93,39 @@ def should_trigger(
         return False, f"Sender '{sender}' not authorized"
 
     # Check for @mention based on event type
+    mention_pattern = f"@{github_config.assistant_account}"
+
     if event_type == "issue_comment":
         comment_body = payload.get("comment", {}).get("body", "") or ""
-        mention_pattern = f"@{github_config.assistant_account}"
         if mention_pattern not in comment_body:
             return False, f"No {mention_pattern} mention found"
         issue_url = payload.get("issue", {}).get("html_url", "")
         issue_title = payload.get("issue", {}).get("title", "")
         issue_number = payload.get("issue", {}).get("number")
         mention_text = comment_body
+
+    elif event_type == "issues":
+        # This event occurs when there is activity relating to an issue
+        # Action "opened" means a new issue was created
+        issue_body = payload.get("issue", {}).get("body", "") or ""
+        if mention_pattern not in issue_body:
+            return False, f"No {mention_pattern} mention found"
+        issue_url = payload.get("issue", {}).get("html_url", "")
+        issue_title = payload.get("issue", {}).get("title", "")
+        issue_number = payload.get("issue", {}).get("number")
+        mention_text = issue_body
+
+    elif event_type == "pull_request":
+        # This event occurs when there is activity relating to a pull request
+        # Action "opened" means a new PR was created
+        pr_body = payload.get("pull_request", {}).get("body", "") or ""
+        if mention_pattern not in pr_body:
+            return False, f"No {mention_pattern} mention found"
+        issue_url = payload.get("pull_request", {}).get("html_url", "")
+        issue_title = payload.get("pull_request", {}).get("title", "")
+        issue_number = payload.get("pull_request", {}).get("number")
+        mention_text = pr_body
+
     else:
         return False, f"Event type '{event_type}' not supported"
 
