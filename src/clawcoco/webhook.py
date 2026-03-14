@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-GitHub Webhook Receiver for OpenClaw Agent
+GitHub Webhook Receiver for ClawCoco Agent
 
 Receives GitHub webhooks, filters for @mentions from authorized user,
-and spawns isolated OpenClaw sessions to handle each issue/PR.
+and spawns agent sessions to handle each issue/PR.
 """
 
 import argparse
@@ -15,14 +15,18 @@ import json
 import logging
 import urllib.parse
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, TypedDict, cast
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, cast
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 
+from .agent import TriggerInfo, get_backend
 from .config import Config, load_config
+from .github_ip import GitHubIPManager
+from .session_store import SessionStore
 
 # Setup logging
 logging.basicConfig(
@@ -32,107 +36,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Default GitHub IP ranges for webhook delivery (fallback if fetch fails)
-# https://api.github.com/meta
-DEFAULT_GITHUB_IP_RANGES = [
-    "192.30.252.0/22",
-    "185.199.108.0/22",
-    "140.82.112.0/20",
-    "143.55.64.0/20",
-]
-
-GITHUB_META_URL = "https://api.github.com/meta"
-IP_REFRESH_INTERVAL = timedelta(hours=24)
-
-
-class GitHubIPManager:
-    """Manages GitHub IP ranges with automatic refresh."""
-
-    def __init__(self) -> None:
-        self._ranges: list[str] = DEFAULT_GITHUB_IP_RANGES.copy()
-        self._last_fetch: datetime | None = None
-        self._http_client: httpx.AsyncClient | None = None
-        self._refresh_task: asyncio.Task[None] | None = None
-        self._shutdown = False
-
-    async def initialize(self, http_client: httpx.AsyncClient) -> None:
-        """Initialize with HTTP client and fetch initial ranges."""
-        self._http_client = http_client
-        await self.fetch()
-        self._refresh_task = asyncio.create_task(self._refresh_loop())
-
-    async def shutdown(self) -> None:
-        """Stop background refresh task."""
-        self._shutdown = True
-        if self._refresh_task:
-            self._refresh_task.cancel()
-            try:
-                await self._refresh_task
-            except asyncio.CancelledError:
-                pass
-
-    async def fetch(self) -> bool:
-        """Fetch latest IP ranges from GitHub API."""
-        if not self._http_client:
-            logger.warning("HTTP client not initialized, using default ranges")
-            return False
-
-        try:
-            response = await self._http_client.get(GITHUB_META_URL, timeout=10.0)
-            response.raise_for_status()
-            data = response.json()
-
-            # Extract webhook IP ranges
-            if "hooks" in data and isinstance(data["hooks"], list):
-                self._ranges = data["hooks"]
-                self._last_fetch = datetime.now(timezone.utc)
-                logger.info(f"Fetched {len(self._ranges)} GitHub IP ranges")
-                return True
-            else:
-                logger.warning("No 'hooks' field in GitHub meta response")
-                return False
-
-        except httpx.HTTPError as e:
-            logger.warning(f"Failed to fetch GitHub IP ranges: {e}")
-            return False
-        except Exception as e:
-            logger.warning(f"Unexpected error fetching GitHub IP ranges: {e}")
-            return False
-
-    async def _refresh_loop(self) -> None:
-        """Background task to periodically refresh IP ranges."""
-        while not self._shutdown:
-            await asyncio.sleep(IP_REFRESH_INTERVAL.total_seconds())
-            if not self._shutdown:
-                success = await self.fetch()
-                if not success:
-                    logger.warning("IP range refresh failed, keeping current ranges")
-
-    def get_ranges(self) -> list[str]:
-        """Get current IP ranges."""
-        return self._ranges
-
-    @property
-    def last_fetch(self) -> datetime | None:
-        """Get timestamp of last successful fetch."""
-        return self._last_fetch
-
-
 # Global instances (set during startup)
 config: Config
-ip_manager: GitHubIPManager = GitHubIPManager()
-
-
-class TriggerInfo(TypedDict):
-    """Info about a webhook event that triggers the agent."""
-
-    url: str
-    title: str
-    number: int
-    sender: str
-    repo: str
-    event_type: str
-    mention_text: str
+ip_manager: GitHubIPManager
+session_store: SessionStore
 
 
 def verify_github_ip(client_ip: str) -> bool:
@@ -187,10 +94,7 @@ def should_trigger(
         return False, f"Sender '{sender}' not authorized"
 
     # Check for @mention based on event type
-
     if event_type == "issue_comment":
-        # This event occurs when there is activity relating to a comment on an issue
-        # or pull request
         comment_body = payload.get("comment", {}).get("body", "") or ""
         mention_pattern = f"@{github_config.assistant_account}"
         if mention_pattern not in comment_body:
@@ -199,7 +103,6 @@ def should_trigger(
         issue_title = payload.get("issue", {}).get("title", "")
         issue_number = payload.get("issue", {}).get("number")
         mention_text = comment_body
-
     else:
         return False, f"Event type '{event_type}' not supported"
 
@@ -221,68 +124,36 @@ def should_trigger(
         mention_text=mention_text[:500],
     )
 
-async def spawn_agent_session(trigger_info: TriggerInfo) -> bool:
-    """Spawn an OpenClaw agent session via CLI to handle the issue."""
-    agent_id = config.openclaw.agent_id
 
-    # Build session ID: github-{repo_name}-issue-{issue_number}
-    repo_name = trigger_info["repo"].split("/")[1]
-    issue_number = trigger_info["number"]
-    session_id = f"github-{repo_name}-issue-{issue_number}"
+async def run_agent(trigger_info: TriggerInfo) -> None:
+    """Run agent in background. Called as asyncio task."""
+    repo_name = trigger_info.repo.split("/")[1]
+    issue_number = trigger_info.number
 
-    logger.info(f"Session ID: {session_id}")
+    # Get existing session or None
+    existing_session_id = session_store.get_session_id(repo_name, issue_number)
 
-    # Build task prompt
-    task = f"""You have been summoned via GitHub mention.
+    # Spawn agent
+    backend = get_backend(config)
+    new_session_id = await backend.spawn(trigger_info, existing_session_id)
 
-**Issue/PR:** {trigger_info['title']}
-**Repository:** {trigger_info['repo']}
-**From:** @{trigger_info['sender']}
-**URL:** {trigger_info['url']}
-
-Please:
-1. Read the issue/PR at the URL above using `gh issue view` or `gh pr view`
-2. Understand what is being asked
-3. Respond appropriately (answer questions, implement changes, etc.)
-4. Post your response as a comment using `gh issue comment` or `gh pr comment`
-
-Use the `gh` CLI which is already authenticated as `{config.github.assistant_account}`.
-"""
-
-    # Build CLI command
-    cmd = [
-        "openclaw",
-        "agent",
-        "--agent",
-        agent_id,
-        "--session-id",
-        session_id,
-        "--message",
-        task,
-        "--timeout",
-        "0",  # No timeout
-    ]
-
-    logger.info(f"Running: {' '.join(cmd[:6])}... (message truncated)")
-
-    try:
-        # Run in background, discard output to avoid pipe buffer deadlock
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        logger.info(f"Spawned process PID: {process.pid}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to spawn agent: {e}")
-        return False
+    # Store session ID for future webhooks
+    session_store.set_session_id(repo_name, issue_number, new_session_id)
+    logger.info(f"Session saved: {repo_name}/{issue_number} -> {new_session_id}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup/shutdown."""
+    global ip_manager, session_store
+
+    # Initialize session store
+    session_db_path = Path("/var/lib/clawcoco/sessions.db")
+    session_db_path.parent.mkdir(parents=True, exist_ok=True)
+    session_store = SessionStore(session_db_path)
+
     # Startup: initialize IP manager with HTTP client
+    ip_manager = GitHubIPManager()
     async with httpx.AsyncClient() as http_client:
         await ip_manager.initialize(http_client)
 
@@ -366,12 +237,11 @@ async def handle_webhook(request: Request):
     if should:
         trigger_info = cast(TriggerInfo, result)
         logger.info(f"Triggering agent spawn for: {trigger_info}")
-        success = await spawn_agent_session(trigger_info)
-        if success:
-            logger.info("Successfully spawned agent session")
-        else:
-            logger.error("Failed to spawn agent session")
-        return {"status": "triggered", "info": result}
+
+        # Spawn agent as background task
+        asyncio.create_task(run_agent(trigger_info))
+
+        return {"status": "triggered", "issue": trigger_info.number}
     else:
         logger.info(f"Not triggering: {result}")
         return {"status": "ignored", "reason": result}
@@ -415,7 +285,7 @@ def main():
     global config
     try:
         config = load_config(args.config)
-        logger.info(f"Loaded config successfully")
+        logger.info("Loaded config successfully")
     except Exception as e:
         logger.error(f"Failed to load config: {e}")
         raise SystemExit(1)
