@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import sys
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
@@ -113,6 +114,69 @@ Use the `gh` CLI which is already authenticated as `{self.config.github.assistan
         return new_session_id
 
 
+class ClaudeSDKBackend(AgentBackend):
+    """Claude Agent SDK backend via subprocess script."""
+
+    def __init__(self, config: "Config") -> None:
+        self.config = config
+
+    async def spawn(self, trigger_info: TriggerInfo, session_id: str | None) -> str:
+        """Spawn agent via script subprocess."""
+        repo_name = trigger_info.repo.split("/")[1]
+        new_session_id = session_id or f"claude-{repo_name}-{trigger_info.number}"
+
+        task = self._build_task_prompt(trigger_info)
+
+        tools = ",".join(self.config.claude_sdk.allowed_tools)
+        cmd = [
+            sys.executable,
+            "-m",
+            "clawcoco.scripts.run_claude_agent",
+            "--prompt",
+            task,
+            "--session-id",
+            new_session_id,
+            "--model",
+            self.config.claude_sdk.model,
+            "--tools",
+            tools,
+        ]
+
+        logger.info(f"Running: {' '.join(cmd[:4])}... (prompt truncated)")
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            logger.info(f"Spawned process PID: {process.pid}")
+        except Exception as e:
+            logger.error(f"Failed to spawn agent: {e}")
+
+        return new_session_id
+
+    def _build_task_prompt(self, trigger_info: TriggerInfo) -> str:
+        """Build task prompt from trigger info."""
+        return f"""You have been summoned via GitHub mention.
+
+**Issue/PR:** {trigger_info.title}
+**Repository:** {trigger_info.repo}
+**From:** @{trigger_info.sender}
+**URL:** {trigger_info.url}
+
+Please:
+1. Read the issue/PR at the URL above using `gh issue view` or `gh pr view`
+2. Understand what is being asked
+3. Respond appropriately (answer questions, implement changes, etc.)
+4. Post your response as a comment using `gh issue comment` or `gh pr comment`
+
+Use the `gh` CLI which is already authenticated as `{self.config.github.assistant_account}`.
+"""
+
+
 def get_backend(config: "Config") -> AgentBackend:
     """Get the configured agent backend."""
+    if config.backend_type == "claude_sdk":
+        return ClaudeSDKBackend(config)
     return OpenClawBackend(config)

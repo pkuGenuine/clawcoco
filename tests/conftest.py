@@ -7,7 +7,13 @@ from unittest.mock import patch
 
 import pytest
 
-from clawcoco.config import Config, GitHubConfig, OpenClawConfig, WebhookConfig
+from clawcoco.config import (
+    ClaudeSDKConfig,
+    Config,
+    GitHubConfig,
+    OpenClawConfig,
+    WebhookConfig,
+)
 from clawcoco.github_ip import GitHubIPManager
 from clawcoco.session_store import SessionStore
 
@@ -29,6 +35,11 @@ def test_config() -> Config:
         openclaw=OpenClawConfig(
             agent_id="coder",
         ),
+        claude_sdk=ClaudeSDKConfig(
+            model="claude-sonnet-4-5-20250929",
+            allowed_tools=["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+        ),
+        backend_type="openclaw",
     )
 
 
