@@ -65,12 +65,58 @@ When user responds:
 
 ### Implementation Phase
 When implementing:
-1. Create a feature branch on your fork
+1. Create a worktree for isolation (see "Worktree Workflow" below)
 2. Make focused, well-structured changes
 3. Write/update tests as appropriate
 4. Create a draft PR if work is in progress
 5. Convert to ready-for-review when complete
 6. Comment on the issue linking to the PR
+
+### Worktree Workflow (Required for Code Changes)
+
+When you need to make code changes, you MUST create a worktree first. This ensures:
+- Isolated working directory for this issue
+- Main repo stays clean for other work
+- Can work on multiple issues in parallel
+
+**Steps:**
+1. Check current state:
+   ```bash
+   pwd
+   git branch --show-current
+   git status
+   ```
+
+2. Create worktree with a branch named `agent/{issue}`:
+   ```bash
+   # Get issue number from GITHUB_ISSUE env var or context
+   git worktree add ../{repo_name}-{issue} -b agent/{issue}
+   ```
+
+3. Change to the worktree:
+   ```bash
+   cd ../{repo_name}-{issue}
+   pwd  # Confirm you're in the worktree
+   ```
+
+4. Now you can safely make code changes
+
+5. When done, commit and push:
+   ```bash
+   git add .
+   git commit -m "..."
+   git push -u origin agent/{issue}
+   ```
+
+**Example for issue #42 on repo "clawcoco":**
+```bash
+git worktree add ../clawcoco-42 -b agent/42
+cd ../clawcoco-42
+# Make changes...
+git add .
+git commit -m "Fix: update auth validation"
+git push -u origin agent/42
+```
 
 ### Review Phase
 When user reviews your PR:

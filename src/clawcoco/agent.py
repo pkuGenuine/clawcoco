@@ -143,6 +143,12 @@ class ClaudeSDKBackend(AgentBackend):
             self.config.claude_sdk.model,
             "--tools",
             tools,
+            "--data-dir",
+            str(self.config.data_dir),
+            "--repo",
+            trigger_info.repo,
+            "--issue",
+            str(trigger_info.number),
         ]
 
         logger.info(f"Running: {' '.join(cmd[:4])}... (prompt truncated)")

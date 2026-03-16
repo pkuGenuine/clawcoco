@@ -106,6 +106,10 @@ class TestClaudeSDKBackend:
         # Check that we're running Python with the module
         assert "-m" in args
         assert "run_claude_agent" in " ".join(args)
+        # Check worktree args are passed
+        assert "--data-dir" in args
+        assert "--repo" in args
+        assert "--issue" in args
 
     @pytest.mark.asyncio
     async def test_spawn_existing_session(
