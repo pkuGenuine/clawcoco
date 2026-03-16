@@ -32,6 +32,7 @@ def test_config() -> Config:
             authorized_user="testuser",
             assistant_account="claude-bot",
         ),
+        data_dir=Path("/tmp/clawcoco-test"),
         openclaw=OpenClawConfig(
             agent_id="coder",
         ),

@@ -16,7 +16,6 @@ import logging
 import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, cast
 
 import httpx
@@ -147,8 +146,8 @@ async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup/shutdown."""
     global ip_manager, session_store
 
-    # Initialize session store
-    session_db_path = Path("/var/lib/clawcoco/sessions.db")
+    # Initialize session store under data_dir
+    session_db_path = config.data_dir / "db" / "sessions.db"
     session_db_path.parent.mkdir(parents=True, exist_ok=True)
     session_store = SessionStore(session_db_path)
 

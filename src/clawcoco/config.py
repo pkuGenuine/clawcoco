@@ -54,6 +54,7 @@ class Config(BaseModel):
 
     webhook: WebhookConfig
     github: GitHubConfig
+    data_dir: Path
     openclaw: OpenClawConfig = Field(default_factory=OpenClawConfig)
     claude_sdk: ClaudeSDKConfig = Field(default_factory=ClaudeSDKConfig)
     backend_type: str = Field(

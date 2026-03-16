@@ -65,6 +65,7 @@ class TestClaudeSDKBackend:
         return Config(
             webhook=test_config.webhook,
             github=test_config.github,
+            data_dir=test_config.data_dir,
             openclaw=test_config.openclaw,
             claude_sdk=ClaudeSDKConfig(
                 model="claude-sonnet-4-5-20250929",
