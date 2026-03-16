@@ -33,6 +33,24 @@ class TriggerInfo:
         self.event_type = event_type
         self.mention_text = mention_text
 
+    def to_prompt(self, assistant_account: str) -> str:
+        """Build task prompt for the agent."""
+        return f"""You have been summoned via GitHub mention.
+
+**Issue/PR:** {self.title}
+**Repository:** {self.repo}
+**From:** @{self.sender}
+**URL:** {self.url}
+
+Please:
+1. Read the issue/PR at the URL above using `gh issue view` or `gh pr view`
+2. Understand what is being asked
+3. Respond appropriately (answer questions, implement changes, etc.)
+4. Post your response as a comment using `gh issue comment` or `gh pr comment`
+
+Use the `gh` CLI which is already authenticated as `{assistant_account}`.
+"""
+
 
 class AgentBackend(ABC):
     """Abstract base class for agent backends."""
@@ -67,22 +85,7 @@ class OpenClawBackend(AgentBackend):
         repo_name = trigger_info.repo.split("/")[1]
         new_session_id = session_id or f"github-{repo_name}-issue-{trigger_info.number}"
 
-        # Build task prompt
-        task = f"""You have been summoned via GitHub mention.
-
-**Issue/PR:** {trigger_info.title}
-**Repository:** {trigger_info.repo}
-**From:** @{trigger_info.sender}
-**URL:** {trigger_info.url}
-
-Please:
-1. Read the issue/PR at the URL above using `gh issue view` or `gh pr view`
-2. Understand what is being asked
-3. Respond appropriately (answer questions, implement changes, etc.)
-4. Post your response as a comment using `gh issue comment` or `gh pr comment`
-
-Use the `gh` CLI which is already authenticated as `{self.config.github.assistant_account}`.
-"""
+        task = trigger_info.to_prompt(self.config.github.assistant_account)
 
         # Build CLI command
         cmd = [
@@ -125,7 +128,7 @@ class ClaudeSDKBackend(AgentBackend):
         repo_name = trigger_info.repo.split("/")[1]
         new_session_id = session_id or f"claude-{repo_name}-{trigger_info.number}"
 
-        task = self._build_task_prompt(trigger_info)
+        task = trigger_info.to_prompt(self.config.github.assistant_account)
 
         tools = ",".join(self.config.claude_sdk.allowed_tools)
         cmd = [
@@ -155,24 +158,6 @@ class ClaudeSDKBackend(AgentBackend):
             logger.error(f"Failed to spawn agent: {e}")
 
         return new_session_id
-
-    def _build_task_prompt(self, trigger_info: TriggerInfo) -> str:
-        """Build task prompt from trigger info."""
-        return f"""You have been summoned via GitHub mention.
-
-**Issue/PR:** {trigger_info.title}
-**Repository:** {trigger_info.repo}
-**From:** @{trigger_info.sender}
-**URL:** {trigger_info.url}
-
-Please:
-1. Read the issue/PR at the URL above using `gh issue view` or `gh pr view`
-2. Understand what is being asked
-3. Respond appropriately (answer questions, implement changes, etc.)
-4. Post your response as a comment using `gh issue comment` or `gh pr comment`
-
-Use the `gh` CLI which is already authenticated as `{self.config.github.assistant_account}`.
-"""
 
 
 def get_backend(config: "Config") -> AgentBackend:
