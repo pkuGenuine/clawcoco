@@ -103,7 +103,7 @@ def main():
     parser.add_argument("--prompt", required=True, help="Task prompt")
     parser.add_argument("--session-id", help="Session ID to resume")
     parser.add_argument(
-        "--model", default="claude-sonnet-4-5-20250929", help="Model to use"
+        "--model", default="glm-5", help="Model to use"
     )
     parser.add_argument(
         "--tools",
