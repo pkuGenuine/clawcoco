@@ -1,12 +1,3 @@
-[webhook]
-secret = "test-secret-123"
-port = 8080
-debug = true
-
-[github]
-authorized_user = "pkuGenuine"
-assistant_account = "genuineClaw"
-
 # Base directory for repos and skills
 # Structure:
 #   data_dir/
@@ -20,12 +11,21 @@ assistant_account = "genuineClaw"
 #       sessions.db
 data_dir = "/var/lib/clawcoco"
 
+# Backend: "openclaw" or "claude_sdk"
+backend_type = "claude_sdk"
+
+[webhook]
+secret = "test-secret-123"
+port = 8080
+debug = true
+
+[github]
+authorized_users = "pkuGenuine"
+assistant_account = "genuineClaw"
+
 [openclaw]
 agent_id = "coder"
 
 [claude_sdk]
 model = "glm-5"
 allowed_tools = ["Skill", "Read", "Edit", "Write", "Bash", "Glob", "Grep"]
-
-# Backend: "openclaw" or "claude_sdk"
-backend_type = "claude_sdk"
