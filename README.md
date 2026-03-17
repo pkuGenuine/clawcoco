@@ -1,11 +1,20 @@
 # ClawCoco
-Claw Code Copilot, work with Openclaw via github, with minimal trust
+Claw Code Copilot, work with Openclaw via GitHub, with minimal trust
 
 ## What is this?
-ClawCoco provides the glue between your GitHub repository and Openclaw agent:
+ClawCoco provides the glue between your GitHub repository and an AI agent:
 
-- **Webhook Service** - Receives GitHub events and notifies the agent
-- **Agent Skill** - Guides Openclaw's behavior and workflow
+- **Webhook Service** - Receives GitHub events and spawns the agent
+- **Agent Skill** - Guides agent behavior and collaboration workflow
+- **Multiple Backends** - Supports OpenClaw and Claude Agent SDK
+
+## Running
+1. Copy `config.example.toml` and configure it
+2. Set `CLAWCOCO_CONFIG` environment variable to your config path
+3. Install with your backend:
+   - OpenClaw: `uv sync`
+   - Claude Agent SDK: `uv sync --extra claude` (requires `claude` CLI installed)
+4. Run `uv run clawcoco` to start the webhook server
 
 ## Philosophy
 In worst cases, your claw could be fully compromised by an attacker and allow RCE
