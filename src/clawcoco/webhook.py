@@ -82,26 +82,39 @@ def should_trigger(
     """
     github_config = config.github
 
-    # Check action is "created" or "opened" (not edit/delete)
-    action = payload.get("action", "")
-    if action not in ("created", "opened"):
-        return False, f"Action '{action}' ignored (only 'created'/'opened' trigger)"
-
     # Check sender is authorized
     sender = payload.get("sender", {}).get("login", "")
     if sender not in github_config.authorized_users:
         return False, f"Sender '{sender}' not authorized"
 
     # Check for @mention based on event type
+    action = payload.get("action", "")
+    mention_pattern = f"@{github_config.assistant_account}"
+
     if event_type == "issue_comment":
+        # Comment on an issue/PR - only trigger on "created" action
+        if action != "created":
+            return False, f"Action '{action}' ignored for issue_comment (only 'created' triggers)"
         comment_body = payload.get("comment", {}).get("body", "") or ""
-        mention_pattern = f"@{github_config.assistant_account}"
         if mention_pattern not in comment_body:
             return False, f"No {mention_pattern} mention found"
         issue_url = payload.get("issue", {}).get("html_url", "")
         issue_title = payload.get("issue", {}).get("title", "")
         issue_number = payload.get("issue", {}).get("number")
         mention_text = comment_body
+
+    elif event_type == "issues":
+        # New issue created - only trigger on "opened" action
+        if action != "opened":
+            return False, f"Action '{action}' ignored for issues (only 'opened' triggers)"
+        issue_body = payload.get("issue", {}).get("body", "") or ""
+        if mention_pattern not in issue_body:
+            return False, f"No {mention_pattern} mention found"
+        issue_url = payload.get("issue", {}).get("html_url", "")
+        issue_title = payload.get("issue", {}).get("title", "")
+        issue_number = payload.get("issue", {}).get("number")
+        mention_text = issue_body
+
     else:
         return False, f"Event type '{event_type}' not supported"
 
