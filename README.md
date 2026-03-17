@@ -16,6 +16,38 @@ ClawCoco provides the glue between your GitHub repository and an AI agent:
    - Claude Agent SDK: `uv sync --extra claude` (requires `claude` CLI installed)
 4. Run `uv run clawcoco` to start the webhook server
 
+## Triggering the Agent
+The agent is triggered by GitHub webhook events when:
+- Sender is an **authorized user** (configured in `authorized_users`)
+- Message contains `@your-agent-name` mention
+
+### Supported Events
+
+| Event | Action | Description |
+|-------|--------|-------------|
+| `issue_comment` | `created` | Comment on issue or PR with @mention |
+| `issues` | `opened` | New issue created with @mention in body |
+| `pull_request_review` | `submitted` | PR review requesting changes with @mention |
+
+### Examples
+
+**Comment on an issue/PR:**
+```
+@claude-bot please help investigate this bug
+```
+
+**New issue:**
+```
+Title: Login fails on mobile
+Body: @claude-bot users can't log in from Safari on iOS
+```
+
+**Request changes on a PR:**
+```
+Review comment: @claude-bot the error handling needs improvement
+```
+(Select "Request changes" when submitting the review)
+
 ## Philosophy
 In worst cases, your claw could be fully compromised by an attacker and allow RCE
 in your claw's execution environment. Thus, I would like to treat the agent as a kind,
