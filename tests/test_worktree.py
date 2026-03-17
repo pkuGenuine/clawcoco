@@ -1,11 +1,11 @@
-"""Tests for repo cloning in run_claude_agent script."""
+"""Tests for repo cloning in git_utils module."""
 
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from clawcoco.scripts.run_claude_agent import ensure_clone
+from clawcoco.git_utils import ensure_clone
 
 # Use current project as test repo
 REPO = "pkuGenuine/clawcoco"
