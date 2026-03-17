@@ -66,7 +66,7 @@ def mock_ip_manager() -> GitHubIPManager:
 
 @pytest.fixture
 def webhook_payload_issue_comment() -> dict:
-    """Sample issue_comment webhook payload."""
+    """Sample issue_comment webhook payload for regular issue."""
     return {
         "action": "created",
         "issue": {
@@ -76,6 +76,51 @@ def webhook_payload_issue_comment() -> dict:
         },
         "comment": {
             "body": "@claude-bot please help fix this bug",
+        },
+        "repository": {
+            "full_name": "testowner/testrepo",
+        },
+        "sender": {
+            "login": "testuser",
+        },
+    }
+
+
+@pytest.fixture
+def webhook_payload_pr_comment() -> dict:
+    """Sample issue_comment webhook payload for PR (has pull_request field)."""
+    return {
+        "action": "created",
+        "issue": {
+            "number": 1,
+            "title": "Restructure as multi-package monorepo",
+            "html_url": "https://github.com/testowner/testrepo/pull/1",
+            "pull_request": {
+                "url": "https://api.github.com/repos/testowner/testrepo/pulls/1",
+            },
+        },
+        "comment": {
+            "body": "@claude-bot please review this PR",
+        },
+        "repository": {
+            "full_name": "testowner/testrepo",
+        },
+        "sender": {
+            "login": "testuser",
+        },
+    }
+
+
+@pytest.fixture
+def webhook_payload_issue_opened() -> dict:
+    """Sample issues webhook payload for new issue."""
+    return {
+        "action": "opened",
+        "issue": {
+            "number": 5,
+            "title": "New Bug Report",
+            "html_url": "https://github.com/testowner/testrepo/issues/5",
+            "body": "@claude-bot there's a bug in the login flow",
         },
         "repository": {
             "full_name": "testowner/testrepo",

@@ -29,13 +29,23 @@ class TestVerifySignature:
 class TestShouldTrigger:
     """Tests for webhook trigger logic."""
 
-    def test_valid_trigger(
+    def test_issue_comment_trigger(
         self, webhook_payload_issue_comment: dict, _setup_webhook_globals
     ) -> None:
-        """Should trigger for valid payload."""
+        """Should trigger for valid issue comment."""
         should, result = should_trigger(webhook_payload_issue_comment, "issue_comment")
         assert should is True
         assert isinstance(result, TriggerInfo)
+        assert result.number == 42
+
+    def test_pr_comment_trigger(
+        self, webhook_payload_pr_comment: dict, _setup_webhook_globals
+    ) -> None:
+        """Should trigger for PR comment (issue_comment with pull_request field)."""
+        should, result = should_trigger(webhook_payload_pr_comment, "issue_comment")
+        assert should is True
+        assert isinstance(result, TriggerInfo)
+        assert result.number == 1
 
     def test_reject_unauthorized(
         self, webhook_payload_unauthorized: dict, _setup_webhook_globals
