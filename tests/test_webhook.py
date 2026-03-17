@@ -56,6 +56,17 @@ class TestShouldTrigger:
         assert isinstance(result, str)
         assert "not authorized" in result
 
+    def test_pr_review_changes_requested(
+        self, webhook_payload_pr_review_changes: dict, _setup_webhook_globals
+    ) -> None:
+        """Should trigger for PR review with changes_requested and mention."""
+        should, result = should_trigger(
+            webhook_payload_pr_review_changes, "pull_request_review"
+        )
+        assert should is True
+        assert isinstance(result, TriggerInfo)
+        assert result.number == 1
+
 
 class TestWebhookEndpoint:
     """Integration tests for webhook endpoint."""

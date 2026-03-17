@@ -115,6 +115,22 @@ def should_trigger(
         issue_number = payload.get("issue", {}).get("number")
         mention_text = issue_body
 
+    elif event_type == "pull_request_review":
+        # PR review submitted - only trigger on "submitted" with "changes_requested" state
+        if action != "submitted":
+            return False, f"Action '{action}' ignored for pull_request_review (only 'submitted' triggers)"
+        review_state = payload.get("review", {}).get("state", "")
+        if review_state != "changes_requested":
+            return False, f"Review state '{review_state}' ignored (only 'changes_requested' triggers)"
+        review_body = payload.get("review", {}).get("body", "") or ""
+        if mention_pattern not in review_body:
+            return False, f"No {mention_pattern} mention found in review body"
+        pr = payload.get("pull_request", {})
+        issue_url = pr.get("html_url", "")
+        issue_title = pr.get("title", "")
+        issue_number = pr.get("number")
+        mention_text = review_body
+
     else:
         return False, f"Event type '{event_type}' not supported"
 

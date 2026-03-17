@@ -132,6 +132,29 @@ def webhook_payload_issue_opened() -> dict:
 
 
 @pytest.fixture
+def webhook_payload_pr_review_changes() -> dict:
+    """Sample pull_request_review webhook payload with changes_requested."""
+    return {
+        "action": "submitted",
+        "review": {
+            "state": "changes_requested",
+            "body": "@claude-bot please fix the error handling",
+        },
+        "pull_request": {
+            "number": 1,
+            "title": "Add new feature",
+            "html_url": "https://github.com/testowner/testrepo/pull/1",
+        },
+        "repository": {
+            "full_name": "testowner/testrepo",
+        },
+        "sender": {
+            "login": "testuser",
+        },
+    }
+
+
+@pytest.fixture
 def webhook_payload_unauthorized() -> dict:
     """Payload from unauthorized user."""
     return {
