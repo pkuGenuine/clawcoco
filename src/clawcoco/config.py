@@ -23,8 +23,8 @@ class WebhookConfig(BaseModel):
 class GitHubConfig(BaseModel):
     """GitHub integration configuration."""
 
-    authorized_user: str = Field(
-        ..., description="GitHub username allowed to trigger the agent"
+    authorized_users: list[str] = Field(
+        ..., description="GitHub usernames allowed to trigger the agent"
     )
     assistant_account: str = Field(
         ..., description="GitHub username of the agent (for @mentions)"

@@ -89,7 +89,7 @@ def should_trigger(
 
     # Check sender is authorized
     sender = payload.get("sender", {}).get("login", "")
-    if sender != github_config.authorized_user:
+    if sender not in github_config.authorized_users:
         return False, f"Sender '{sender}' not authorized"
 
     # Check for @mention based on event type
@@ -257,7 +257,7 @@ async def root():
     """Root endpoint with basic info."""
     return {
         "service": "ClawCoco GitHub Webhook",
-        "authorized_user": config.github.authorized_user,
+        "authorized_users": config.github.authorized_users,
         "assistant": config.github.assistant_account,
         "github_ip_ranges": {
             "count": len(ip_manager.get_ranges()),
@@ -296,7 +296,7 @@ def main():
 
     logger.info(f"Starting webhook server on port {config.webhook.port}")
     logger.info(f"Debug mode: {config.webhook.debug}")
-    logger.info(f"Authorized user: {config.github.authorized_user}")
+    logger.info(f"Authorized users: {config.github.authorized_users}")
 
     uvicorn.run(app, host="0.0.0.0", port=config.webhook.port)
 

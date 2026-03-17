@@ -29,7 +29,7 @@ def test_config() -> Config:
             github_ips_only=False,  # Disable IP check for tests
         ),
         github=GitHubConfig(
-            authorized_user="testuser",
+            authorized_users=["testuser"],
             assistant_account="claude-bot",
         ),
         data_dir=Path("/tmp/clawcoco-test"),

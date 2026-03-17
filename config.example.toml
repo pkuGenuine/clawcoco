@@ -20,7 +20,7 @@ port = 8080
 debug = true
 
 [github]
-authorized_users = "pkuGenuine"
+authorized_users = ["pkuGenuine"]
 assistant_account = "genuineClaw"
 
 [openclaw]
