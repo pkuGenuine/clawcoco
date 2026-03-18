@@ -22,6 +22,7 @@ debug = true
 [github]
 authorized_users = ["pkuGenuine"]
 assistant_account = "genuineClaw"
+assistant_account_token = "ghp_xxx"  # GitHub token for agent account (repo scope)
 
 [openclaw]
 agent_id = "coder"
