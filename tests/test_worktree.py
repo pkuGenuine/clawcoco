@@ -2,6 +2,7 @@
 
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -23,7 +24,10 @@ class TestEnsureClone:
 
     def test_creates_clone(self, temp_data_dir: Path) -> None:
         """Should clone repo if not exists."""
-        clone_path = ensure_clone(temp_data_dir, REPO)
+        with patch("clawcoco.git_utils.ensure_fork_exists"):
+            clone_path = ensure_clone(
+                temp_data_dir, REPO, "claude-bot", "ghp_test_token"
+            )
 
         org, repo_name = REPO.split("/")
         expected_path = temp_data_dir / "repos" / org / repo_name
@@ -41,8 +45,13 @@ class TestEnsureClone:
 
     def test_idempotent(self, temp_data_dir: Path) -> None:
         """Should be safe to call multiple times."""
-        clone_path1 = ensure_clone(temp_data_dir, REPO)
-        clone_path2 = ensure_clone(temp_data_dir, REPO)
+        with patch("clawcoco.git_utils.ensure_fork_exists"):
+            clone_path1 = ensure_clone(
+                temp_data_dir, REPO, "claude-bot", "ghp_test_token"
+            )
+            clone_path2 = ensure_clone(
+                temp_data_dir, REPO, "claude-bot", "ghp_test_token"
+            )
 
         assert clone_path1 == clone_path2
         assert clone_path1.exists()

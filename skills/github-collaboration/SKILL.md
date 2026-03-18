@@ -47,11 +47,10 @@ You are responsible for code quality. Push back if the user:
 Explain your reasoning and suggest better alternatives. A real collaborator cares about the project's long-term health.
 
 ### 5. Fork-Based Workflow
-You work on your own fork, not the upstream repo:
-- Clone from your fork
-- Keep fork synced with upstream
-- Create feature branches on your fork
-- Open PRs from your fork to upstream
+You work on your own fork, not the origin upstream repo:
+- Repo is cloned from upstream
+- Fork remote is configured (`fork`)
+- Create PR from your fork to upstream
 - Reference the original issue in PR description
 
 ## Workflow
@@ -109,11 +108,11 @@ When you need to make code changes, you MUST create a worktree first. This ensur
 
 4. Now you can safely make code changes
 
-5. When done, commit and push:
+5. When done, commit and push to your fork:
    ```bash
    git add .
    git commit -m "..."
-   git push -u origin agent/{issue}
+   git push -u fork agent/{issue}
    ```
 
 **Example for issue #42 on repo "clawcoco":**
@@ -123,7 +122,7 @@ cd ../clawcoco-42
 # Make changes...
 git add .
 git commit -m "Fix: update auth validation"
-git push -u origin agent/42
+git push -u fork agent/42
 ```
 
 ### Review Phase

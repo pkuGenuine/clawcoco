@@ -29,6 +29,9 @@ class GitHubConfig(BaseModel):
     assistant_account: str = Field(
         ..., description="GitHub username of the agent (for @mentions)"
     )
+    assistant_account_token: str = Field(
+        ..., description="GitHub token for the agent account (repo scope)"
+    )
 
 
 class OpenClawConfig(BaseModel):

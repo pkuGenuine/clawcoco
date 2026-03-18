@@ -149,6 +149,10 @@ class ClaudeSDKBackend(AgentBackend):
             trigger_info.repo,
             "--issue",
             str(trigger_info.number),
+            "--assistant-account",
+            self.config.github.assistant_account,
+            "--github-token",
+            self.config.github.assistant_account_token,
         ]
 
         logger.info(f"Running: {' '.join(cmd[:4])}... (prompt truncated)")

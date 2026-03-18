@@ -31,6 +31,7 @@ def test_config() -> Config:
         github=GitHubConfig(
             authorized_users=["testuser"],
             assistant_account="claude-bot",
+            assistant_account_token="ghp_test_token",
         ),
         data_dir=Path("/tmp/clawcoco-test"),
         openclaw=OpenClawConfig(

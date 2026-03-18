@@ -5,16 +5,71 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import httpx
+
 logger = logging.getLogger(__name__)
 
 
-def ensure_clone(data_dir: Path, repo: str) -> Path:
+def ensure_fork_exists(
+    repo: str, assistant_account: str, token: str
+) -> None:
     """
-    Ensure repo is cloned and return its path.
+    Ensure the agent's fork exists, creating it if necessary.
+
+    Args:
+        repo: Full repo name (e.g., "pkuGenuine/clawcoco")
+        assistant_account: Agent's GitHub username
+        token: GitHub token with repo scope
+    """
+    org, repo_name = repo.split("/")
+    fork_full_name = f"{assistant_account}/{repo_name}"
+
+    # Check if fork exists
+    check_url = f"https://api.github.com/repos/{fork_full_name}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    with httpx.Client() as client:
+        response = client.get(check_url, headers=headers)
+
+        if response.status_code == 200:
+            logger.info(f"Fork already exists: {fork_full_name}")
+            return
+
+        if response.status_code == 404:
+            # Fork doesn't exist, create it
+            logger.info(f"Creating fork: {fork_full_name}")
+            create_url = f"https://api.github.com/repos/{repo}/forks"
+            create_response = client.post(create_url, headers=headers)
+
+            if create_response.status_code in (200, 202):
+                logger.info(f"Fork created: {fork_full_name}")
+            else:
+                raise RuntimeError(
+                    f"Failed to create fork: {create_response.status_code} - {create_response.text}"
+                )
+        else:
+            raise RuntimeError(
+                f"Failed to check fork existence: {response.status_code} - {response.text}"
+            )
+
+
+def ensure_clone(
+    data_dir: Path,
+    repo: str,
+    assistant_account: str,
+    token: str,
+) -> Path:
+    """
+    Ensure repo is cloned and fork remote is configured.
 
     Args:
         data_dir: Base data directory (e.g., /var/lib/clawcoco)
         repo: Full repo name (e.g., "pkuGenuine/claw-infra-kit")
+        assistant_account: Agent's GitHub username
+        token: GitHub token with repo scope
 
     Returns:
         Path to the cloned repo directory
@@ -42,6 +97,27 @@ def ensure_clone(data_dir: Path, repo: str) -> Path:
             check=False,
             capture_output=True,
         )
+
+    # Ensure fork exists
+    ensure_fork_exists(repo, assistant_account, token)
+
+    # Add fork remote if not present
+    result = subprocess.run(
+        ["git", "-C", str(clone_path), "remote"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    remotes = result.stdout.strip().split("\n")
+
+    if "fork" not in remotes:
+        fork_url = f"https://{token}@github.com/{assistant_account}/{repo_name}.git"
+        subprocess.run(
+            ["git", "-C", str(clone_path), "remote", "add", "fork", fork_url],
+            check=True,
+            capture_output=True,
+        )
+        logger.info(f"Added fork remote: {assistant_account}/{repo_name}")
 
     return clone_path
 

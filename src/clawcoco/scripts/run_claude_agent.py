@@ -48,6 +48,12 @@ def main():
     )
     parser.add_argument("--repo", required=True, help="Full repo name (org/repo)")
     parser.add_argument("--issue", required=True, type=int, help="Issue/PR number")
+    parser.add_argument(
+        "--assistant-account", required=True, help="Agent's GitHub username"
+    )
+    parser.add_argument(
+        "--github-token", required=True, help="GitHub token for agent account"
+    )
     args = parser.parse_args()
 
     # Setup logging
@@ -58,7 +64,9 @@ def main():
 
     # Ensure repo is cloned
     data_dir = Path(args.data_dir)
-    repo_path = ensure_clone(data_dir, args.repo)
+    repo_path = ensure_clone(
+        data_dir, args.repo, args.assistant_account, args.github_token
+    )
     copy_skills(data_dir, repo_path)
 
     # Change to repo directory
