@@ -76,6 +76,7 @@ def main():
     # Set environment variables for agent context
     os.environ["GITHUB_REPO"] = args.repo
     os.environ["GITHUB_ISSUE"] = str(args.issue)
+    os.environ["GH_TOKEN"] = args.github_token
 
     # Run agent
     tools = [t.strip() for t in args.tools.split(",") if t.strip()]
