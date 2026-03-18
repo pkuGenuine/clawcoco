@@ -94,10 +94,10 @@ When you need to make code changes, you MUST create a worktree first. This ensur
    git status
    ```
 
-2. Create worktree with a branch named `agent/{issue}`:
+2. Create worktree with a branch from `origin/main` (ensures latest code):
    ```bash
    # Get issue number from GITHUB_ISSUE env var or context
-   git worktree add ../{repo_name}-{issue} -b agent/{issue}
+   git worktree add ../{repo_name}-{issue} -b agent/{issue} origin/main
    ```
 
 3. Change to the worktree:
@@ -115,14 +115,20 @@ When you need to make code changes, you MUST create a worktree first. This ensur
    git push -u fork agent/{issue}
    ```
 
+6. Create PR from your fork to upstream:
+   ```bash
+   gh pr create --repo {upstream_org}/{repo_name} --head {your_account}:agent/{issue} --title "..." --body "..."
+   ```
+
 **Example for issue #42 on repo "clawcoco":**
 ```bash
-git worktree add ../clawcoco-42 -b agent/42
+git worktree add ../clawcoco-42 -b agent/42 origin/main
 cd ../clawcoco-42
 # Make changes...
 git add .
 git commit -m "Fix: update auth validation"
 git push -u fork agent/42
+gh pr create --repo pkuGenuine/clawcoco --head genuineClaw:agent/42 --title "Fix: update auth validation" --body "Fixes #42"
 ```
 
 ### Review Phase
