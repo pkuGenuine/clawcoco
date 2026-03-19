@@ -6,9 +6,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from clawcoco.agent import TriggerInfo
+from clawcoco.agent import Trigger
 from clawcoco.config import config
-from clawcoco.webhook import app, should_trigger, verify_signature
+from clawcoco.webhook import (
+    app,
+    handle_issue_comment,
+    handle_issues,
+    handle_pr_review,
+    verify_signature,
+)
 
 
 class TestVerifySignature:
@@ -27,45 +33,34 @@ class TestVerifySignature:
         assert verify_signature(b"{}", "sha256=invalid", "secret") is False
 
 
-class TestShouldTrigger:
-    """Tests for webhook trigger logic."""
+class TestHandlers:
+    """Tests for event handlers."""
 
-    def test_issue_comment_trigger(
-        self, webhook_payload_issue_comment: dict, _setup_webhook_globals
-    ) -> None:
-        """Should trigger for valid issue comment."""
-        should, result = should_trigger(webhook_payload_issue_comment, "issue_comment")
-        assert should is True
-        assert isinstance(result, TriggerInfo)
+    def test_handle_issue_comment(self, webhook_payload_issue_comment: dict) -> None:
+        """Should return Trigger for valid issue comment."""
+        result = handle_issue_comment(webhook_payload_issue_comment, "claude-bot")
+        assert isinstance(result, Trigger)
         assert result.number == 42
+        assert result.repo == "testowner/testrepo"
+        assert "Test Issue Title" in result.prompt
 
-    def test_pr_comment_trigger(
-        self, webhook_payload_pr_comment: dict, _setup_webhook_globals
-    ) -> None:
-        """Should trigger for PR comment (issue_comment with pull_request field)."""
-        should, result = should_trigger(webhook_payload_pr_comment, "issue_comment")
-        assert should is True
-        assert isinstance(result, TriggerInfo)
+    def test_handle_pr_comment(self, webhook_payload_pr_comment: dict) -> None:
+        """Should return Trigger for PR comment."""
+        result = handle_issue_comment(webhook_payload_pr_comment, "claude-bot")
+        assert isinstance(result, Trigger)
         assert result.number == 1
 
-    def test_reject_unauthorized(
-        self, webhook_payload_unauthorized: dict, _setup_webhook_globals
-    ) -> None:
-        """Should not trigger for unauthorized user."""
-        should, result = should_trigger(webhook_payload_unauthorized, "issue_comment")
-        assert should is False
-        assert isinstance(result, str)
-        assert "not authorized" in result
+    def test_handle_issues(self, webhook_payload_issue_opened: dict) -> None:
+        """Should return Trigger for new issue."""
+        result = handle_issues(webhook_payload_issue_opened, "claude-bot")
+        assert isinstance(result, Trigger)
+        assert result.number == 5
+        assert "New Bug Report" in result.prompt
 
-    def test_pr_review_changes_requested(
-        self, webhook_payload_pr_review_changes: dict, _setup_webhook_globals
-    ) -> None:
-        """Should trigger for PR review with changes_requested and mention."""
-        should, result = should_trigger(
-            webhook_payload_pr_review_changes, "pull_request_review"
-        )
-        assert should is True
-        assert isinstance(result, TriggerInfo)
+    def test_handle_pr_review(self, webhook_payload_pr_review_changes: dict) -> None:
+        """Should return Trigger for PR review with changes_requested."""
+        result = handle_pr_review(webhook_payload_pr_review_changes, "claude-bot")
+        assert isinstance(result, Trigger)
         assert result.number == 1
 
 

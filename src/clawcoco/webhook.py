@@ -15,13 +15,13 @@ import logging
 import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, cast
+from typing import Any, Callable
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 
-from .agent import TriggerInfo, get_backend
+from .agent import Trigger, get_backend
 from .config import config
 from .git_utils import copy_skills, ensure_clone
 from .github_ip import GitHubIPManager
@@ -72,95 +72,150 @@ def verify_signature(payload: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(computed, expected)
 
 
-def should_trigger(
-    payload: dict[str, Any], event_type: str
-) -> tuple[bool, str | TriggerInfo]:
-    """
-    Determine if this webhook should trigger the agent.
-    Returns (should_trigger, info_dict_or_reason_string).
-    """
-    github_config = config.github
+def handle_issue_comment(
+    payload: dict[str, Any], assistant_account: str
+) -> Trigger | str:
+    """Handle issue_comment event. Returns Trigger or skip reason."""
+    if payload.get("action") != "created":
+        return "Action ignored (only 'created' triggers)"
 
-    # Check sender is authorized
+    comment = payload.get("comment", {})
+    comment_body = comment.get("body", "") or ""
+    mention = f"@{assistant_account}"
+    if mention not in comment_body:
+        return f"No {mention} mention found"
+
+    issue = payload.get("issue", {})
+    issue_number = issue.get("number")
+    issue_title = issue.get("title", "")
+    issue_url = issue.get("html_url", "")
+
+    if not issue_number or not issue_url:
+        return "Missing required fields in payload"
+
+    repo = payload.get("repository", {}).get("full_name", "")
     sender = payload.get("sender", {}).get("login", "")
-    if sender not in github_config.authorized_users:
-        return False, f"Sender '{sender}' not authorized"
 
-    # Check for @mention based on event type
-    action = payload.get("action", "")
-    mention_pattern = f"@{github_config.assistant_account}"
+    prompt = f"""You have been mentioned in a comment on an issue/PR.
 
-    if event_type == "issue_comment":
-        # Comment on an issue/PR - only trigger on "created" action
-        if action != "created":
-            return False, f"Action '{action}' ignored for issue_comment (only 'created' triggers)"
-        comment_body = payload.get("comment", {}).get("body", "") or ""
-        if mention_pattern not in comment_body:
-            return False, f"No {mention_pattern} mention found"
-        issue_url = payload.get("issue", {}).get("html_url", "")
-        issue_title = payload.get("issue", {}).get("title", "")
-        issue_number = payload.get("issue", {}).get("number")
-        mention_text = comment_body
+**Issue/PR:** {issue_title}
+**Repository:** {repo}
+**From:** @{sender}
+**URL:** {issue_url}
 
-    elif event_type == "issues":
-        # New issue created - only trigger on "opened" action
-        if action != "opened":
-            return False, f"Action '{action}' ignored for issues (only 'opened' triggers)"
-        issue_body = payload.get("issue", {}).get("body", "") or ""
-        if mention_pattern not in issue_body:
-            return False, f"No {mention_pattern} mention found"
-        issue_url = payload.get("issue", {}).get("html_url", "")
-        issue_title = payload.get("issue", {}).get("title", "")
-        issue_number = payload.get("issue", {}).get("number")
-        mention_text = issue_body
+Please:
+1. Read the issue/PR using `gh issue view` or `gh pr view`
+2. Understand what is being asked
+3. Respond appropriately (answer questions, implement changes, etc.)
+4. Post your response as a comment using `gh issue comment` or `gh pr comment`
 
-    elif event_type == "pull_request_review":
-        # PR review submitted - only trigger on "submitted" with "changes_requested" state
-        if action != "submitted":
-            return False, f"Action '{action}' ignored for pull_request_review (only 'submitted' triggers)"
-        review_state = payload.get("review", {}).get("state", "")
-        if review_state != "changes_requested":
-            return False, f"Review state '{review_state}' ignored (only 'changes_requested' triggers)"
-        review_body = payload.get("review", {}).get("body", "") or ""
-        if mention_pattern not in review_body:
-            return False, f"No {mention_pattern} mention found in review body"
-        pr = payload.get("pull_request", {})
-        issue_url = pr.get("html_url", "")
-        issue_title = pr.get("title", "")
-        issue_number = pr.get("number")
-        mention_text = review_body
-
-    else:
-        return False, f"Event type '{event_type}' not supported"
-
-    # Ensure we have required fields (should always be present from GitHub)
-    if not issue_url or not issue_title or issue_number is None:
-        return False, "Missing required fields in payload"
-
-    # Get repo name
-    repo_full_name = payload.get("repository", {}).get("full_name", "")
-
-    logger.info(f"Will trigger! Issue #{issue_number}: {issue_title}")
-    return True, TriggerInfo(
-        url=issue_url,
-        title=issue_title,
-        number=issue_number,
-        sender=sender,
-        repo=repo_full_name,
-        event_type=event_type,
-        mention_text=mention_text[:500],
-    )
+Use the `gh` CLI which is already authenticated as `{assistant_account}`.
+"""
+    logger.info(f"Triggering on issue_comment: #{issue_number}")
+    return Trigger(repo=repo, number=issue_number, prompt=prompt)
 
 
-async def run_agent(trigger_info: TriggerInfo) -> None:
+def handle_issues(payload: dict[str, Any], assistant_account: str) -> Trigger | str:
+    """Handle issues event. Returns Trigger or skip reason."""
+    if payload.get("action") != "opened":
+        return "Action ignored (only 'opened' triggers)"
+
+    issue = payload.get("issue", {})
+    issue_body = issue.get("body", "") or ""
+    mention = f"@{assistant_account}"
+    if mention not in issue_body:
+        return f"No {mention} mention found"
+
+    issue_number = issue.get("number")
+    issue_title = issue.get("title", "")
+    issue_url = issue.get("html_url", "")
+
+    if not issue_number or not issue_url:
+        return "Missing required fields in payload"
+
+    repo = payload.get("repository", {}).get("full_name", "")
+    sender = payload.get("sender", {}).get("login", "")
+
+    prompt = f"""A new issue was opened mentioning you.
+
+**Issue:** {issue_title}
+**Repository:** {repo}
+**From:** @{sender}
+**URL:** {issue_url}
+
+Please:
+1. Read the issue using `gh issue view {issue_number}`
+2. Understand what is being asked
+3. Respond appropriately (answer questions, implement changes, etc.)
+4. Post your response as a comment using `gh issue comment {issue_number}`
+
+Use the `gh` CLI which is already authenticated as `{assistant_account}`.
+"""
+    logger.info(f"Triggering on new issue: #{issue_number}")
+    return Trigger(repo=repo, number=issue_number, prompt=prompt)
+
+
+def handle_pr_review(payload: dict[str, Any], assistant_account: str) -> Trigger | str:
+    """Handle pull_request_review event. Returns Trigger or skip reason."""
+    if payload.get("action") != "submitted":
+        return "Action ignored (only 'submitted' triggers)"
+
+    review = payload.get("review", {})
+    if review.get("state") != "changes_requested":
+        return "Review state ignored (only 'changes_requested' triggers)"
+
+    review_body = review.get("body", "") or ""
+    mention = f"@{assistant_account}"
+    if mention not in review_body:
+        return f"No {mention} mention found in review body"
+
+    pr = payload.get("pull_request", {})
+    pr_number = pr.get("number")
+    pr_title = pr.get("title", "")
+    pr_url = pr.get("html_url", "")
+
+    if not pr_number or not pr_url:
+        return "Missing required fields in payload"
+
+    repo = payload.get("repository", {}).get("full_name", "")
+    sender = payload.get("sender", {}).get("login", "")
+
+    prompt = f"""Changes were requested on a PR mentioning you.
+
+**PR:** {pr_title}
+**Repository:** {repo}
+**From:** @{sender}
+**URL:** {pr_url}
+
+Please:
+1. Read the PR and review feedback using `gh pr view {pr_number}`
+2. Understand what changes are requested
+3. Make the necessary changes in the code
+4. Push your changes and respond to the review
+
+Use the `gh` CLI which is already authenticated as `{assistant_account}`.
+"""
+    logger.info(f"Triggering on PR review: #{pr_number}")
+    return Trigger(repo=repo, number=pr_number, prompt=prompt)
+
+
+# Event handlers registry
+EVENT_HANDLERS: dict[str, Callable] = {
+    "issue_comment": handle_issue_comment,
+    "issues": handle_issues,
+    "pull_request_review": handle_pr_review,
+}
+
+
+async def run_agent(trigger: Trigger) -> None:
     """Run agent in background. Called as asyncio task."""
-    repo_name = trigger_info.repo.split("/")[1]
-    issue_number = trigger_info.number
+    repo_name = trigger.repo.split("/")[1]
+    issue_number = trigger.number
 
     # Setup repo before spawning agent
     repo_path = await ensure_clone(
         config.data_dir,
-        trigger_info.repo,
+        trigger.repo,
         config.github.assistant_account,
         config.github.assistant_account_token,
     )
@@ -171,9 +226,7 @@ async def run_agent(trigger_info: TriggerInfo) -> None:
 
     # Spawn agent
     backend = get_backend()
-    new_session_id = await backend.spawn(
-        trigger_info, existing_session_id, repo_path
-    )
+    new_session_id = await backend.spawn(trigger, existing_session_id, repo_path)
 
     # Store session ID for future webhooks
     session_store.set_session_id(repo_name, issue_number, new_session_id)
@@ -269,17 +322,28 @@ async def handle_webhook(request: Request):
 
     logger.info("Signature verified OK")
 
-    # Check if we should trigger
-    should, result = should_trigger(payload, event_type)
+    # Check sender is authorized
+    sender = payload.get("sender", {}).get("login", "")
+    if sender not in config.github.authorized_users:
+        logger.info(f"Not triggering: sender '{sender}' not authorized")
+        return {"status": "ignored", "reason": f"Sender '{sender}' not authorized"}
 
-    if should:
-        trigger_info = cast(TriggerInfo, result)
-        logger.info(f"Triggering agent spawn for: {trigger_info}")
+    # Get handler for event type
+    handler = EVENT_HANDLERS.get(event_type)
+    if not handler:
+        logger.info(f"Not triggering: event type '{event_type}' not supported")
+        return {
+            "status": "ignored",
+            "reason": f"Event type '{event_type}' not supported",
+        }
 
-        # Spawn agent as background task
-        asyncio.create_task(run_agent(trigger_info))
+    # Run handler
+    result = handler(payload, config.github.assistant_account)
 
-        return {"status": "triggered", "issue": trigger_info.number}
+    if isinstance(result, Trigger):
+        logger.info(f"Triggering agent spawn for: {result}")
+        asyncio.create_task(run_agent(result))
+        return {"status": "triggered", "issue": result.number}
     else:
         logger.info(f"Not triggering: {result}")
         return {"status": "ignored", "reason": result}

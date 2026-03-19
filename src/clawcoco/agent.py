@@ -4,6 +4,7 @@ import asyncio
 import logging
 import sys
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 
 from .config import config
@@ -11,44 +12,13 @@ from .config import config
 logger = logging.getLogger(__name__)
 
 
-class TriggerInfo:
-    """Info about a webhook event that triggers the agent."""
+@dataclass
+class Trigger:
+    """Minimal trigger info for spawning an agent."""
 
-    def __init__(
-        self,
-        url: str,
-        title: str,
-        number: int,
-        sender: str,
-        repo: str,
-        event_type: str,
-        mention_text: str,
-    ) -> None:
-        self.url = url
-        self.title = title
-        self.number = number
-        self.sender = sender
-        self.repo = repo
-        self.event_type = event_type
-        self.mention_text = mention_text
-
-    def to_prompt(self, assistant_account: str) -> str:
-        """Build task prompt for the agent."""
-        return f"""You have been summoned via GitHub mention.
-
-**Issue/PR:** {self.title}
-**Repository:** {self.repo}
-**From:** @{self.sender}
-**URL:** {self.url}
-
-Please:
-1. Read the issue/PR at the URL above using `gh issue view` or `gh pr view`
-2. Understand what is being asked
-3. Respond appropriately (answer questions, implement changes, etc.)
-4. Post your response as a comment using `gh issue comment` or `gh pr comment`
-
-Use the `gh` CLI which is already authenticated as `{assistant_account}`.
-"""
+    repo: str
+    number: int
+    prompt: str
 
 
 class AgentBackend(ABC):
@@ -57,7 +27,7 @@ class AgentBackend(ABC):
     @abstractmethod
     async def spawn(
         self,
-        trigger_info: "TriggerInfo",
+        trigger: Trigger,
         session_id: str | None,
         repo_path: Path,
     ) -> str:
@@ -65,7 +35,7 @@ class AgentBackend(ABC):
         Spawn agent to handle the issue.
 
         Args:
-            trigger_info: Information about the webhook trigger
+            trigger: Trigger info with repo, number, and prompt
             session_id: Existing session ID to resume, or None to start fresh
             repo_path: Path to the cloned repository
 
@@ -80,7 +50,7 @@ class OpenClawBackend(AgentBackend):
 
     async def spawn(
         self,
-        trigger_info: "TriggerInfo",
+        trigger: Trigger,
         session_id: str | None,
         repo_path: Path,
     ) -> str:
@@ -88,11 +58,8 @@ class OpenClawBackend(AgentBackend):
         agent_id = config.openclaw.agent_id
 
         # Use existing session or generate a new one
-        # (Pretend session forking works for now)
-        repo_name = trigger_info.repo.split("/")[1]
-        new_session_id = session_id or f"github-{repo_name}-issue-{trigger_info.number}"
-
-        task = trigger_info.to_prompt(config.github.assistant_account)
+        repo_name = trigger.repo.split("/")[1]
+        new_session_id = session_id or f"github-{repo_name}-issue-{trigger.number}"
 
         # Build CLI command
         cmd = [
@@ -103,7 +70,7 @@ class OpenClawBackend(AgentBackend):
             "--session-id",
             new_session_id,
             "--message",
-            task,
+            trigger.prompt,
             "--timeout",
             "0",  # No timeout
         ]
@@ -129,28 +96,26 @@ class ClaudeSDKBackend(AgentBackend):
 
     async def spawn(
         self,
-        trigger_info: "TriggerInfo",
+        trigger: Trigger,
         session_id: str | None,
         repo_path: Path,
     ) -> str:
         """Spawn agent via script subprocess."""
-        repo_name = trigger_info.repo.split("/")[1]
-        new_session_id = session_id or f"claude-{repo_name}-{trigger_info.number}"
-
-        task = trigger_info.to_prompt(config.github.assistant_account)
+        repo_name = trigger.repo.split("/")[1]
+        new_session_id = session_id or f"claude-{repo_name}-{trigger.number}"
 
         cmd = [
             sys.executable,
             "-m",
             "clawcoco.scripts.run_claude_agent",
             "--prompt",
-            task,
+            trigger.prompt,
             "--session-id",
             new_session_id,
             "--repo",
-            trigger_info.repo,
+            trigger.repo,
             "--issue",
-            str(trigger_info.number),
+            str(trigger.number),
         ]
 
         logger.info(f"Running: {' '.join(cmd[:4])}... (prompt truncated)")
