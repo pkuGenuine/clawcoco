@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import config
+from .git_utils import copy_skills, ensure_clone
+from .session_store import SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -139,3 +141,29 @@ def get_backend() -> AgentBackend:
     if config.backend_type == "claude_sdk":
         return ClaudeSDKBackend()
     return OpenClawBackend()
+
+
+async def run_agent(trigger: Trigger, session_store: SessionStore) -> None:
+    """Run agent in background. Called by handlers."""
+    repo_name = trigger.repo.split("/")[1]
+    issue_number = trigger.number
+
+    # Setup repo before spawning agent
+    repo_path = await ensure_clone(
+        config.data_dir,
+        trigger.repo,
+        config.github.assistant_account,
+        config.github.assistant_account_token,
+    )
+    await copy_skills(config.data_dir, repo_path)
+
+    # Get existing session or None
+    existing_session_id = session_store.get_session_id(repo_name, issue_number)
+
+    # Spawn agent
+    backend = get_backend()
+    new_session_id = await backend.spawn(trigger, existing_session_id, repo_path)
+
+    # Store session ID for future webhooks
+    session_store.set_session_id(repo_name, issue_number, new_session_id)
+    logger.info(f"Session saved: {repo_name}/{issue_number} -> {new_session_id}")

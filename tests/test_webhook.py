@@ -6,15 +6,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from clawcoco.agent import Trigger
 from clawcoco.config import config
-from clawcoco.webhook import (
-    app,
+from clawcoco.handlers import (
     handle_issue_comment,
     handle_issues,
-    handle_pr_review,
-    verify_signature,
+    handle_pull_request,
+    handle_pull_request_review,
 )
+from clawcoco.webhook import app, verify_signature
 
 
 class TestVerifySignature:
@@ -36,32 +35,109 @@ class TestVerifySignature:
 class TestHandlers:
     """Tests for event handlers."""
 
-    def test_handle_issue_comment(self, webhook_payload_issue_comment: dict) -> None:
-        """Should return Trigger for valid issue comment."""
-        result = handle_issue_comment(webhook_payload_issue_comment, "claude-bot")
-        assert isinstance(result, Trigger)
-        assert result.number == 42
-        assert result.repo == "testowner/testrepo"
-        assert "Test Issue Title" in result.prompt
+    def test_handle_issue_comment(
+        self, webhook_payload_issue_comment: dict, session_store
+    ) -> None:
+        """Should return triggered for valid issue comment."""
+        with (
+            patch("clawcoco.handlers.issue_comment.run_agent", new_callable=AsyncMock),
+            patch("clawcoco.agent.ensure_clone", new_callable=AsyncMock),
+            patch("clawcoco.agent.copy_skills", new_callable=AsyncMock),
+        ):
+            import asyncio
 
-    def test_handle_pr_comment(self, webhook_payload_pr_comment: dict) -> None:
-        """Should return Trigger for PR comment."""
-        result = handle_issue_comment(webhook_payload_pr_comment, "claude-bot")
-        assert isinstance(result, Trigger)
-        assert result.number == 1
+            result = asyncio.run(handle_issue_comment(webhook_payload_issue_comment, session_store))
+        assert result["status"] == "triggered"
+        assert result["issue"] == 42
 
-    def test_handle_issues(self, webhook_payload_issue_opened: dict) -> None:
-        """Should return Trigger for new issue."""
-        result = handle_issues(webhook_payload_issue_opened, "claude-bot")
-        assert isinstance(result, Trigger)
-        assert result.number == 5
-        assert "New Bug Report" in result.prompt
+    def test_handle_pr_comment(
+        self, webhook_payload_pr_comment: dict, session_store
+    ) -> None:
+        """Should return triggered for PR comment."""
+        with (
+            patch("clawcoco.handlers.issue_comment.run_agent", new_callable=AsyncMock),
+            patch("clawcoco.agent.ensure_clone", new_callable=AsyncMock),
+            patch("clawcoco.agent.copy_skills", new_callable=AsyncMock),
+        ):
+            import asyncio
 
-    def test_handle_pr_review(self, webhook_payload_pr_review_changes: dict) -> None:
-        """Should return Trigger for PR review with changes_requested."""
-        result = handle_pr_review(webhook_payload_pr_review_changes, "claude-bot")
-        assert isinstance(result, Trigger)
-        assert result.number == 1
+            result = asyncio.run(handle_issue_comment(webhook_payload_pr_comment, session_store))
+        assert result["status"] == "triggered"
+        assert result["issue"] == 1
+
+    def test_handle_issues(
+        self, webhook_payload_issue_opened: dict, session_store
+    ) -> None:
+        """Should return triggered for new issue."""
+        with (
+            patch("clawcoco.handlers.issues.run_agent", new_callable=AsyncMock),
+            patch("clawcoco.agent.ensure_clone", new_callable=AsyncMock),
+            patch("clawcoco.agent.copy_skills", new_callable=AsyncMock),
+        ):
+            import asyncio
+
+            result = asyncio.run(handle_issues(webhook_payload_issue_opened, session_store))
+        assert result["status"] == "triggered"
+        assert result["issue"] == 5
+
+    def test_handle_pr_review(
+        self, webhook_payload_pr_review_changes: dict, session_store
+    ) -> None:
+        """Should return triggered for PR review with changes_requested."""
+        with (
+            patch(
+                "clawcoco.handlers.pull_request_review.run_agent", new_callable=AsyncMock
+            ),
+            patch("clawcoco.agent.ensure_clone", new_callable=AsyncMock),
+            patch("clawcoco.agent.copy_skills", new_callable=AsyncMock),
+        ):
+            import asyncio
+
+            result = asyncio.run(handle_pull_request_review(webhook_payload_pr_review_changes, session_store))
+        assert result["status"] == "triggered"
+        assert result["issue"] == 1
+
+
+class TestPullRequestTracking:
+    """Tests for PR tracking handler."""
+
+    def test_pr_tracking_matching_branch(self, session_store) -> None:
+        """Should track PR with matching branch pattern."""
+        # Create a session record first (simulating agent was triggered)
+        session_store.set_session_id("testrepo", 42, "test-session-id")
+
+        payload = {
+            "action": "opened",
+            "pull_request": {
+                "number": 123,
+                "head": {"ref": "agent/42"},
+            },
+            "repository": {"full_name": "testowner/testrepo"},
+        }
+        import asyncio
+
+        result = asyncio.run(handle_pull_request(payload, session_store))
+        assert result["status"] == "pr_tracked"
+        assert result["issue"] == 42
+        assert result["pr"] == 123
+
+        # Verify session store was updated
+        assert session_store.get_pr_number("testrepo", 42) == 123
+
+    def test_pr_tracking_non_matching_branch(self, session_store) -> None:
+        """Should ignore PR with non-matching branch pattern."""
+        payload = {
+            "action": "opened",
+            "pull_request": {
+                "number": 123,
+                "head": {"ref": "feature/some-feature"},
+            },
+            "repository": {"full_name": "testowner/testrepo"},
+        }
+        import asyncio
+
+        result = asyncio.run(handle_pull_request(payload, session_store))
+        assert result["status"] == "ignored"
 
 
 class TestWebhookEndpoint:
@@ -84,9 +160,9 @@ class TestWebhookEndpoint:
 
         with (
             patch(
-                "clawcoco.webhook.ensure_clone", new_callable=AsyncMock
+                "clawcoco.agent.ensure_clone", new_callable=AsyncMock
             ) as mock_clone,
-            patch("clawcoco.webhook.copy_skills", new_callable=AsyncMock),
+            patch("clawcoco.agent.copy_skills", new_callable=AsyncMock),
             patch(
                 "asyncio.create_subprocess_exec", new_callable=AsyncMock
             ) as mock_spawn,

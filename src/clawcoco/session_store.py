@@ -12,6 +12,7 @@ class SessionRecord(SQLModel, table=True):
     repo: str = Field(primary_key=True)
     issue: int = Field(primary_key=True)
     session_id: str
+    pr_number: int | None = Field(default=None)
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -40,3 +41,19 @@ class SessionStore:
                 record = SessionRecord(repo=repo, issue=issue, session_id=session_id)
             session.add(record)
             session.commit()
+
+    def set_pr_number(self, repo: str, issue: int, pr_number: int) -> None:
+        """Update PR number for existing session."""
+        with Session(self._engine) as session:
+            record = session.get(SessionRecord, (repo, issue))
+            if record:
+                record.pr_number = pr_number
+                record.updated_at = datetime.now(timezone.utc)
+                session.add(record)
+                session.commit()
+
+    def get_pr_number(self, repo: str, issue: int) -> int | None:
+        """Get PR number for a repo/issue pair."""
+        with Session(self._engine) as session:
+            record = session.get(SessionRecord, (repo, issue))
+            return record.pr_number if record else None

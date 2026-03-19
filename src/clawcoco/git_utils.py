@@ -10,9 +10,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-async def ensure_fork_exists(
-    repo: str, assistant_account: str, token: str
-) -> None:
+async def ensure_fork_exists(repo: str, assistant_account: str, token: str) -> None:
     """
     Ensure the agent's fork exists, creating it if necessary.
 
