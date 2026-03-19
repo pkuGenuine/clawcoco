@@ -7,42 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from clawcoco.config import (
-    ClaudeSDKConfig,
-    Config,
-    GitHubConfig,
-    OpenClawConfig,
-    WebhookConfig,
-)
 from clawcoco.github_ip import GitHubIPManager
 from clawcoco.session_store import SessionStore
-
-
-@pytest.fixture
-def test_config() -> Config:
-    """Create a test configuration."""
-    return Config(
-        webhook=WebhookConfig(
-            secret="test-secret-key",
-            port=8080,
-            debug=True,
-            github_ips_only=False,  # Disable IP check for tests
-        ),
-        github=GitHubConfig(
-            authorized_users=["testuser"],
-            assistant_account="claude-bot",
-            assistant_account_token="ghp_test_token",
-        ),
-        data_dir=Path("/tmp/clawcoco-test"),
-        openclaw=OpenClawConfig(
-            agent_id="coder",
-        ),
-        claude_sdk=ClaudeSDKConfig(
-            model="claude-sonnet-4-5-20250929",
-            allowed_tools=["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
-        ),
-        backend_type="openclaw",
-    )
 
 
 @pytest.fixture
@@ -52,16 +18,15 @@ def temp_session_db(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def session_store(temp_session_db: Path) -> SessionStore:
+def session_store(temp_session_db: Path):
     """Create a session store with temporary database."""
     return SessionStore(temp_session_db)
 
 
 @pytest.fixture
-def mock_ip_manager() -> GitHubIPManager:
+def mock_ip_manager():
     """Create an IP manager with mocked HTTP client (no actual fetch)."""
     manager = GitHubIPManager()
-    # Skip initialization, just use defaults
     return manager
 
 
@@ -190,10 +155,9 @@ def compute_signature_fn():
 
 
 @pytest.fixture
-def _setup_webhook_globals(test_config: Config, mock_ip_manager, temp_session_db):
+def _setup_webhook_globals(mock_ip_manager, temp_session_db):
     """Set up module-level globals for webhook tests."""
     patches = [
-        patch("clawcoco.webhook.config", test_config, create=True),
         patch("clawcoco.webhook.ip_manager", mock_ip_manager, create=True),
         patch(
             "clawcoco.webhook.session_store", SessionStore(temp_session_db), create=True

@@ -6,7 +6,6 @@ Receives GitHub webhooks, filters for @mentions from authorized user,
 and spawns agent sessions to handle each issue/PR.
 """
 
-import argparse
 import asyncio
 import hashlib
 import hmac
@@ -23,7 +22,8 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 
 from .agent import TriggerInfo, get_backend
-from .config import Config, load_config
+from .config import config
+from .git_utils import copy_skills, ensure_clone
 from .github_ip import GitHubIPManager
 from .session_store import SessionStore
 
@@ -36,7 +36,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global instances (set during startup)
-config: Config
 ip_manager: GitHubIPManager
 session_store: SessionStore
 
@@ -158,12 +157,23 @@ async def run_agent(trigger_info: TriggerInfo) -> None:
     repo_name = trigger_info.repo.split("/")[1]
     issue_number = trigger_info.number
 
+    # Setup repo before spawning agent
+    repo_path = await ensure_clone(
+        config.data_dir,
+        trigger_info.repo,
+        config.github.assistant_account,
+        config.github.assistant_account_token,
+    )
+    await copy_skills(config.data_dir, repo_path)
+
     # Get existing session or None
     existing_session_id = session_store.get_session_id(repo_name, issue_number)
 
     # Spawn agent
-    backend = get_backend(config)
-    new_session_id = await backend.spawn(trigger_info, existing_session_id)
+    backend = get_backend()
+    new_session_id = await backend.spawn(
+        trigger_info, existing_session_id, repo_path
+    )
 
     # Store session ID for future webhooks
     session_store.set_session_id(repo_name, issue_number, new_session_id)
@@ -299,25 +309,6 @@ async def root():
 
 def main():
     """Run the webhook server."""
-    parser = argparse.ArgumentParser(description="ClawCoco GitHub Webhook Server")
-    parser.add_argument(
-        "--config",
-        "-c",
-        type=str,
-        required=False,
-        help="Path to config file (defaults to CLAWCOCO_CONFIG env var)",
-    )
-    args = parser.parse_args()
-
-    # Load and validate config
-    global config
-    try:
-        config = load_config(args.config)
-        logger.info("Loaded config successfully")
-    except Exception as e:
-        logger.error(f"Failed to load config: {e}")
-        raise SystemExit(1)
-
     # Set log level
     if config.webhook.debug:
         logging.getLogger().setLevel(logging.DEBUG)

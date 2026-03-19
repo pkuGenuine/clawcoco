@@ -65,24 +65,11 @@ class Config(BaseModel):
     )
 
 
-def load_config(config_path: str | Path | None = None) -> Config:
-    """
-    Load configuration from TOML file.
-
-    Priority:
-    1. Explicit path provided via CLI arg
-    2. CLAWCOCO_CONFIG environment variable
-    3. Error if neither provided
-    """
-    # Resolve path
-    if config_path is None:
-        env_path = os.environ.get("CLAWCOCO_CONFIG")
-        if env_path:
-            config_path = Path(env_path)
-        else:
-            raise ValueError(
-                "Config path required. Provide via --config flag or CLAWCOCO_CONFIG env var"
-            )
+def _load_config() -> Config:
+    """Load configuration from CLAWCOCO_CONFIG environment variable."""
+    config_path = os.environ.get("CLAWCOCO_CONFIG")
+    if not config_path:
+        raise ValueError("CLAWCOCO_CONFIG environment variable is required")
 
     path = Path(config_path)
     if not path.exists():
@@ -92,3 +79,7 @@ def load_config(config_path: str | Path | None = None) -> Config:
         raw = tomllib.load(f)
 
     return Config.model_validate(raw)
+
+
+# Module-level singleton
+config: Config = _load_config()

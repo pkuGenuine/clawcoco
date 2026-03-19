@@ -4,10 +4,9 @@ import asyncio
 import logging
 import sys
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from pathlib import Path
 
-if TYPE_CHECKING:
-    from .config import Config
+from .config import config
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +55,19 @@ class AgentBackend(ABC):
     """Abstract base class for agent backends."""
 
     @abstractmethod
-    async def spawn(self, trigger_info: TriggerInfo, session_id: str | None) -> str:
+    async def spawn(
+        self,
+        trigger_info: "TriggerInfo",
+        session_id: str | None,
+        repo_path: Path,
+    ) -> str:
         """
         Spawn agent to handle the issue.
 
         Args:
             trigger_info: Information about the webhook trigger
             session_id: Existing session ID to resume, or None to start fresh
+            repo_path: Path to the cloned repository
 
         Returns:
             The session ID (new or existing)
@@ -73,19 +78,21 @@ class AgentBackend(ABC):
 class OpenClawBackend(AgentBackend):
     """OpenClaw CLI-based agent backend."""
 
-    def __init__(self, config: "Config") -> None:
-        self.config = config
-
-    async def spawn(self, trigger_info: TriggerInfo, session_id: str | None) -> str:
+    async def spawn(
+        self,
+        trigger_info: "TriggerInfo",
+        session_id: str | None,
+        repo_path: Path,
+    ) -> str:
         """Spawn OpenClaw agent via CLI."""
-        agent_id = self.config.openclaw.agent_id
+        agent_id = config.openclaw.agent_id
 
         # Use existing session or generate a new one
         # (Pretend session forking works for now)
         repo_name = trigger_info.repo.split("/")[1]
         new_session_id = session_id or f"github-{repo_name}-issue-{trigger_info.number}"
 
-        task = trigger_info.to_prompt(self.config.github.assistant_account)
+        task = trigger_info.to_prompt(config.github.assistant_account)
 
         # Build CLI command
         cmd = [
@@ -120,17 +127,18 @@ class OpenClawBackend(AgentBackend):
 class ClaudeSDKBackend(AgentBackend):
     """Claude Agent SDK backend via subprocess script."""
 
-    def __init__(self, config: "Config") -> None:
-        self.config = config
-
-    async def spawn(self, trigger_info: TriggerInfo, session_id: str | None) -> str:
+    async def spawn(
+        self,
+        trigger_info: "TriggerInfo",
+        session_id: str | None,
+        repo_path: Path,
+    ) -> str:
         """Spawn agent via script subprocess."""
         repo_name = trigger_info.repo.split("/")[1]
         new_session_id = session_id or f"claude-{repo_name}-{trigger_info.number}"
 
-        task = trigger_info.to_prompt(self.config.github.assistant_account)
+        task = trigger_info.to_prompt(config.github.assistant_account)
 
-        tools = ",".join(self.config.claude_sdk.allowed_tools)
         cmd = [
             sys.executable,
             "-m",
@@ -139,20 +147,10 @@ class ClaudeSDKBackend(AgentBackend):
             task,
             "--session-id",
             new_session_id,
-            "--model",
-            self.config.claude_sdk.model,
-            "--tools",
-            tools,
-            "--data-dir",
-            str(self.config.data_dir),
             "--repo",
             trigger_info.repo,
             "--issue",
             str(trigger_info.number),
-            "--assistant-account",
-            self.config.github.assistant_account,
-            "--github-token",
-            self.config.github.assistant_account_token,
         ]
 
         logger.info(f"Running: {' '.join(cmd[:4])}... (prompt truncated)")
@@ -160,6 +158,7 @@ class ClaudeSDKBackend(AgentBackend):
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
+                cwd=repo_path,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
@@ -170,8 +169,8 @@ class ClaudeSDKBackend(AgentBackend):
         return new_session_id
 
 
-def get_backend(config: "Config") -> AgentBackend:
+def get_backend() -> AgentBackend:
     """Get the configured agent backend."""
     if config.backend_type == "claude_sdk":
-        return ClaudeSDKBackend(config)
-    return OpenClawBackend(config)
+        return ClaudeSDKBackend()
+    return OpenClawBackend()

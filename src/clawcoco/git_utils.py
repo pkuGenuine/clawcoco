@@ -1,8 +1,8 @@
 """Git utilities for repo cloning and management."""
 
+import asyncio
 import logging
 import shutil
-import subprocess
 from pathlib import Path
 
 import httpx
@@ -10,7 +10,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-def ensure_fork_exists(
+async def ensure_fork_exists(
     repo: str, assistant_account: str, token: str
 ) -> None:
     """
@@ -24,25 +24,23 @@ def ensure_fork_exists(
     org, repo_name = repo.split("/")
     fork_full_name = f"{assistant_account}/{repo_name}"
 
-    # Check if fork exists
-    check_url = f"https://api.github.com/repos/{fork_full_name}"
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
     }
 
-    with httpx.Client() as client:
-        response = client.get(check_url, headers=headers)
+    async with httpx.AsyncClient() as client:
+        check_url = f"https://api.github.com/repos/{fork_full_name}"
+        response = await client.get(check_url, headers=headers)
 
         if response.status_code == 200:
             logger.info(f"Fork already exists: {fork_full_name}")
             return
 
         if response.status_code == 404:
-            # Fork doesn't exist, create it
             logger.info(f"Creating fork: {fork_full_name}")
             create_url = f"https://api.github.com/repos/{repo}/forks"
-            create_response = client.post(create_url, headers=headers)
+            create_response = await client.post(create_url, headers=headers)
 
             if create_response.status_code in (200, 202):
                 logger.info(f"Fork created: {fork_full_name}")
@@ -56,7 +54,23 @@ def ensure_fork_exists(
             )
 
 
-def ensure_clone(
+async def _run_git(args: list[str]) -> str:
+    """Run a git command asynchronously."""
+    process = await asyncio.create_subprocess_exec(
+        "git",
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        raise RuntimeError(f"Git command failed: {stderr.decode()}")
+
+    return stdout.decode()
+
+
+async def ensure_clone(
     data_dir: Path,
     repo: str,
     assistant_account: str,
@@ -83,46 +97,28 @@ def ensure_clone(
     if not clone_path.exists():
         clone_url = f"https://github.com/{repo}.git"
         logger.info(f"Cloning repo: {clone_url}")
-        subprocess.run(
-            ["git", "clone", clone_url, str(clone_path)],
-            check=True,
-            capture_output=True,
-        )
+        await _run_git(["clone", clone_url, str(clone_path)])
         logger.info(f"Repo cloned to: {clone_path}")
     else:
-        # Fetch latest
         logger.info(f"Fetching latest from remote")
-        subprocess.run(
-            ["git", "-C", str(clone_path), "fetch"],
-            check=False,
-            capture_output=True,
-        )
+        await _run_git(["-C", str(clone_path), "fetch"])
 
     # Ensure fork exists
-    ensure_fork_exists(repo, assistant_account, token)
+    await ensure_fork_exists(repo, assistant_account, token)
 
     # Add fork remote if not present
-    result = subprocess.run(
-        ["git", "-C", str(clone_path), "remote"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    remotes = result.stdout.strip().split("\n")
+    result = await _run_git(["-C", str(clone_path), "remote"])
+    remotes = result.strip().split("\n")
 
     if "fork" not in remotes:
         fork_url = f"https://{token}@github.com/{assistant_account}/{repo_name}.git"
-        subprocess.run(
-            ["git", "-C", str(clone_path), "remote", "add", "fork", fork_url],
-            check=True,
-            capture_output=True,
-        )
+        await _run_git(["-C", str(clone_path), "remote", "add", "fork", fork_url])
         logger.info(f"Added fork remote: {assistant_account}/{repo_name}")
 
     return clone_path
 
 
-def copy_skills(data_dir: Path, clone_path: Path) -> None:
+async def copy_skills(data_dir: Path, clone_path: Path) -> None:
     """Copy skills from data_dir/skills to the cloned repo."""
     src_skills_dir = data_dir / "skills"
     if not src_skills_dir.exists():
@@ -140,7 +136,8 @@ def copy_skills(data_dir: Path, clone_path: Path) -> None:
         if skill.is_dir():
             dest_skill = dest_skills_dir / skill.name
             if not dest_skill.exists():
-                shutil.copytree(skill, dest_skill)
+                # Run shutil.copytree in executor to avoid blocking
+                await asyncio.to_thread(shutil.copytree, skill, dest_skill)
                 logger.info(f"Copied skill: {skill.name}")
 
     logger.info(f"Skills copied to: {dest_skills_dir}")

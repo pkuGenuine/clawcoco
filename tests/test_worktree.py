@@ -2,7 +2,7 @@
 
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -22,10 +22,14 @@ class TestEnsureClone:
         data_dir.mkdir()
         return data_dir
 
-    def test_creates_clone(self, temp_data_dir: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_creates_clone(self, temp_data_dir: Path) -> None:
         """Should clone repo if not exists."""
-        with patch("clawcoco.git_utils.ensure_fork_exists"):
-            clone_path = ensure_clone(
+        with patch(
+            "clawcoco.git_utils.ensure_fork_exists", new_callable=AsyncMock
+        ) as mock_fork:
+            mock_fork.return_value = None
+            clone_path = await ensure_clone(
                 temp_data_dir, REPO, "claude-bot", "ghp_test_token"
             )
 
@@ -43,13 +47,17 @@ class TestEnsureClone:
         )
         assert result.stdout.strip() == "false"
 
-    def test_idempotent(self, temp_data_dir: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_idempotent(self, temp_data_dir: Path) -> None:
         """Should be safe to call multiple times."""
-        with patch("clawcoco.git_utils.ensure_fork_exists"):
-            clone_path1 = ensure_clone(
+        with patch(
+            "clawcoco.git_utils.ensure_fork_exists", new_callable=AsyncMock
+        ) as mock_fork:
+            mock_fork.return_value = None
+            clone_path1 = await ensure_clone(
                 temp_data_dir, REPO, "claude-bot", "ghp_test_token"
             )
-            clone_path2 = ensure_clone(
+            clone_path2 = await ensure_clone(
                 temp_data_dir, REPO, "claude-bot", "ghp_test_token"
             )
 

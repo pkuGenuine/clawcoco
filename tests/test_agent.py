@@ -1,19 +1,19 @@
 """Tests for agent module."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from clawcoco.agent import ClaudeSDKBackend, OpenClawBackend, TriggerInfo
-from clawcoco.config import ClaudeSDKConfig, Config
 
 
 class TestOpenClawBackend:
     """Tests for OpenClawBackend class."""
 
     @pytest.fixture
-    def backend(self, test_config: Config) -> OpenClawBackend:
-        return OpenClawBackend(test_config)
+    def backend(self) -> OpenClawBackend:
+        return OpenClawBackend()
 
     @pytest.fixture
     def trigger_info(self) -> TriggerInfo:
@@ -27,16 +27,20 @@ class TestOpenClawBackend:
             mention_text="@claude-bot please fix this",
         )
 
+    @pytest.fixture
+    def repo_path(self, tmp_path: Path) -> Path:
+        return tmp_path / "repos" / "owner" / "repo"
+
     @pytest.mark.asyncio
     async def test_spawn_new_session(
-        self, backend: OpenClawBackend, trigger_info: TriggerInfo
+        self, backend: OpenClawBackend, trigger_info: TriggerInfo, repo_path: Path
     ) -> None:
         """Should spawn agent with new session ID."""
         with patch(
             "asyncio.create_subprocess_exec", new_callable=AsyncMock
         ) as mock_spawn:
             mock_spawn.return_value = MagicMock(pid=12345)
-            session_id = await backend.spawn(trigger_info, None)
+            session_id = await backend.spawn(trigger_info, None, repo_path)
 
         assert session_id == "github-repo-issue-42"
         args = mock_spawn.call_args[0]
@@ -44,14 +48,14 @@ class TestOpenClawBackend:
 
     @pytest.mark.asyncio
     async def test_spawn_existing_session(
-        self, backend: OpenClawBackend, trigger_info: TriggerInfo
+        self, backend: OpenClawBackend, trigger_info: TriggerInfo, repo_path: Path
     ) -> None:
         """Should use existing session ID when provided."""
         with patch(
             "asyncio.create_subprocess_exec", new_callable=AsyncMock
         ) as mock_spawn:
             mock_spawn.return_value = MagicMock(pid=12345)
-            session_id = await backend.spawn(trigger_info, "existing-session")
+            session_id = await backend.spawn(trigger_info, "existing-session", repo_path)
 
         assert session_id == "existing-session"
 
@@ -60,23 +64,8 @@ class TestClaudeSDKBackend:
     """Tests for ClaudeSDKBackend class."""
 
     @pytest.fixture
-    def claude_sdk_config(self, test_config: Config) -> Config:
-        """Create a config with claude_sdk backend type."""
-        return Config(
-            webhook=test_config.webhook,
-            github=test_config.github,
-            data_dir=test_config.data_dir,
-            openclaw=test_config.openclaw,
-            claude_sdk=ClaudeSDKConfig(
-                model="claude-sonnet-4-5-20250929",
-                allowed_tools=["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
-            ),
-            backend_type="claude_sdk",
-        )
-
-    @pytest.fixture
-    def backend(self, claude_sdk_config: Config) -> ClaudeSDKBackend:
-        return ClaudeSDKBackend(claude_sdk_config)
+    def backend(self) -> ClaudeSDKBackend:
+        return ClaudeSDKBackend()
 
     @pytest.fixture
     def trigger_info(self) -> TriggerInfo:
@@ -90,36 +79,41 @@ class TestClaudeSDKBackend:
             mention_text="@claude-bot please fix this",
         )
 
+    @pytest.fixture
+    def repo_path(self, tmp_path: Path) -> Path:
+        return tmp_path / "repos" / "owner" / "repo"
+
     @pytest.mark.asyncio
     async def test_spawn_new_session(
-        self, backend: ClaudeSDKBackend, trigger_info: TriggerInfo
+        self, backend: ClaudeSDKBackend, trigger_info: TriggerInfo, repo_path: Path
     ) -> None:
         """Should spawn agent with new session ID."""
         with patch(
             "asyncio.create_subprocess_exec", new_callable=AsyncMock
         ) as mock_spawn:
             mock_spawn.return_value = MagicMock(pid=12345)
-            session_id = await backend.spawn(trigger_info, None)
+            session_id = await backend.spawn(trigger_info, None, repo_path)
 
         assert session_id == "claude-repo-42"
         args = mock_spawn.call_args[0]
         # Check that we're running Python with the module
         assert "-m" in args
         assert "run_claude_agent" in " ".join(args)
-        # Check worktree args are passed
-        assert "--data-dir" in args
+        # Check required args are passed
         assert "--repo" in args
         assert "--issue" in args
+        # Check cwd is set
+        assert mock_spawn.call_args.kwargs.get("cwd") == repo_path
 
     @pytest.mark.asyncio
     async def test_spawn_existing_session(
-        self, backend: ClaudeSDKBackend, trigger_info: TriggerInfo
+        self, backend: ClaudeSDKBackend, trigger_info: TriggerInfo, repo_path: Path
     ) -> None:
         """Should use existing session ID when provided."""
         with patch(
             "asyncio.create_subprocess_exec", new_callable=AsyncMock
         ) as mock_spawn:
             mock_spawn.return_value = MagicMock(pid=12345)
-            session_id = await backend.spawn(trigger_info, "existing-session")
+            session_id = await backend.spawn(trigger_info, "existing-session", repo_path)
 
         assert session_id == "existing-session"

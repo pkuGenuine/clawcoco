@@ -18,10 +18,11 @@ backend_type = "claude_sdk"
 secret = "test-secret-123"
 port = 8080
 debug = true
+github_ips_only = false  # Set to true in production
 
 [github]
-authorized_users = ["pkuGenuine"]
-assistant_account = "genuineClaw"
+authorized_users = ["testuser"]  # Replace with your GitHub username
+assistant_account = "claude-bot"  # Your agent's GitHub account
 assistant_account_token = "ghp_xxx"  # GitHub token for agent account (repo scope)
 
 [openclaw]

@@ -41,9 +41,10 @@ GitHub Webhook → FastAPI Server → Agent Backend → Spawned Agent Process
 - **webhook.py** - FastAPI endpoints, signature/IP verification, triggers agent spawn
 - **agent.py** - `AgentBackend` abstraction with `OpenClawBackend` and `ClaudeSDKBackend` implementations
 - **config.py** - Pydantic models for TOML config, loaded via `CLAWCOCO_CONFIG` env var
+- **git_utils.py** - Repo cloning, fork creation, and remote setup
 - **session_store.py** - SQLite-backed session persistence (maps repo+issue → session_id)
 - **github_ip.py** - Fetches/refreshes GitHub IP ranges for webhook verification
-- **scripts/run_claude_agent.py** - Subprocess script for ClaudeSDKBackend; clones repo, copies skills, runs agent
+- **scripts/run_claude_agent.py** - Subprocess script for ClaudeSDKBackend; sets up fork, runs agent
 
 ### Data Directory Structure
 

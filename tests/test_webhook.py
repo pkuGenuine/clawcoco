@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from clawcoco.agent import TriggerInfo
+from clawcoco.config import config
 from clawcoco.webhook import app, should_trigger, verify_signature
 
 
@@ -78,18 +79,24 @@ class TestWebhookEndpoint:
     def test_webhook_valid_request(
         self,
         client: TestClient,
-        test_config,
         webhook_payload_issue_comment: dict,
         compute_signature_fn,
         _setup_webhook_globals,
     ) -> None:
         """Should accept valid webhook and trigger agent."""
         payload_bytes = json.dumps(webhook_payload_issue_comment).encode()
-        signature = compute_signature_fn(payload_bytes, test_config.webhook.secret)
+        signature = compute_signature_fn(payload_bytes, config.webhook.secret)
 
-        with patch(
-            "asyncio.create_subprocess_exec", new_callable=AsyncMock
-        ) as mock_spawn:
+        with (
+            patch(
+                "clawcoco.webhook.ensure_clone", new_callable=AsyncMock
+            ) as mock_clone,
+            patch("clawcoco.webhook.copy_skills", new_callable=AsyncMock),
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_spawn,
+        ):
+            mock_clone.return_value = "/tmp/test/repo"
             mock_spawn.return_value = MagicMock(pid=12345)
             response = client.post(
                 "/webhook",
