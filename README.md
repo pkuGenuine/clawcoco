@@ -1,5 +1,5 @@
 # ClawCoco
-Claw Code Copilot, work with Openclaw via GitHub, with minimal trust
+Claw Code Copilot, work with Openclaw (and other code agent) via GitHub, with minimal trust
 
 ## What is this?
 ClawCoco provides the glue between your GitHub repository and an AI agent:
